@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Simple CRUD - JWT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    body {
+      background-color: #f8f9fa;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .form-wrapper {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+    .table-wrapper {
+      margin-top: 30px;
+    }
+    h1 {
+      font-size: 2rem;
+      color: #007bff;
+      font-weight: bold;
+    }
+    .logout-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+    }
+  </style>
+</head>
+<body class="container py-5">
+
+  <button id="logout-btn" class="btn btn-danger logout-btn" style="display:none">🚪 Đăng xuất</button>
+
+  <h1 class="text-center mb-4">👋 Chào mừng tới với CI/CD Secutity Web</h1>
+
+  <!-- 🔐 Login -->
+  <div id="login-section" class="form-wrapper mb-4">
+    <h5 class="mb-3">🔐 Đăng nhập</h5>
+    <form id="login-form" class="row g-3">
+      <div class="col-md-5">
+        <input type="text" id="username" placeholder="Tên đăng nhập" class="form-control" required>
+      </div>
+      <div class="col-md-5">
+        <input type="password" id="password" placeholder="Mật khẩu" class="form-control" required>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-success w-100">Đăng nhập</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ✅ Form CRUD -->
+  <div id="main-section" style="display:none">
+    <div class="form-wrapper">
+      <h5 class="mb-3">➕ Thêm / ✏️ Sửa người dùng</h5>
+      <form id="user-form" class="row g-3">
+        <input type="hidden" id="id">
+        <div class="col-md-6">
+          <input type="text" id="full_name" placeholder="Họ tên" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+          <input type="text" id="dob" placeholder="Ngày sinh (dd/mm/yyyy)" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+          <input type="email" id="email" placeholder="Email" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+          <input type="text" id="phone" placeholder="Số điện thoại" class="form-control" required>
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">💾 Lưu</button>
+          <button type="button" id="cancel-edit" class="btn btn-secondary">↩️ Hủy</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="table-wrapper">
+      <h5 class="mt-4 mb-3">📋 Danh sách người dùng</h5>
+      <table class="table table-bordered table-hover bg-white shadow-sm">
+        <thead class="table-primary">
+          <tr>
+            <th>ID</th><th>Họ tên</th><th>Ngày sinh</th><th>Email</th><th>SĐT</th><th>Hành động</th>
+          </tr>
+        </thead>
+        <tbody id="user-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const loginForm = document.getElementById('login-form');
+    const userForm = document.getElementById('user-form');
+    const table = document.getElementById('user-table-body');
+    const cancelBtn = document.getElementById('cancel-edit');
+    const logoutBtn = document.getElementById('logout-btn');
+    const api = 'http://localhost:5001/api/users';
+    const loginAPI = 'http://localhost:5001/api/login';
+
+    let authToken = localStorage.getItem("token") || '';
+
+    const getAuthHeaders = () => ({
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + authToken
+    });
+
+    function showAlert(status) {
+      if (status === 403) alert("🚫 Bạn không có quyền thực hiện thao tác này.");
+      if (status === 409) alert("⚠️ Bạn đã gửi quá nhiều request. Vui lòng thử lại sau.");
+      if (status === 401) alert("❌ Đăng nhập thất bại!");
+    }
+
+    function setLoggedInUI() {
+      document.getElementById("login-section").style.display = "none";
+      document.getElementById("main-section").style.display = "block";
+      logoutBtn.style.display = "inline-block";
+    }
+
+    function logout() {
+      localStorage.removeItem("token");
+      authToken = '';
+      location.reload();
+    }
+
+    logoutBtn.onclick = logout;
+
+    loginForm.onsubmit = (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      fetch(loginAPI, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+      .then(res => {
+        if (!res.ok) {
+          showAlert(res.status);
+          return;
+        }
+        return res.json();
+      })
+      .then(data => {
+        if (!data || !data.token) return;
+        authToken = data.token;
+        localStorage.setItem("token", authToken);
+        setLoggedInUI();
+        loadUsers();
+      })
+      .catch(err => console.error("Lỗi đăng nhập:", err));
+    };
+
+    function loadUsers() {
+      fetch(api, { headers: getAuthHeaders() })
+        .then(res => {
+          if (!res.ok) {
+            showAlert(res.status);
+            return [];
+          }
+          return res.json();
+        })
+        .then(data => {
+          table.innerHTML = '';
+          data.forEach(user => {
+            const row = `<tr>
+              <td>${user.id}</td>
+              <td>${user.full_name}</td>
+              <td>${user.dob}</td>
+              <td>${user.email}</td>
+              <td>${user.phone}</td>
+              <td>
+                <button onclick='edit(${JSON.stringify(user)})' class='btn btn-sm btn-warning'>✏️ Sửa</button>
+                <button onclick='del(${user.id})' class='btn btn-sm btn-danger'>🗑️ Xóa</button>
+              </td>
+            </tr>`;
+            table.innerHTML += row;
+          });
+        });
+    }
+
+    userForm.onsubmit = (e) => {
+      e.preventDefault();
+      const user = {
+        full_name: userForm.full_name.value,
+        dob: userForm.dob.value,
+        email: userForm.email.value,
+        phone: userForm.phone.value
+      };
+      const id = userForm.id.value;
+      const method = id ? 'PUT' : 'POST';
+      const url = id ? `${api}/${id}` : api;
+
+      fetch(url, {
+        method,
+        headers: getAuthHeaders(),
+        body: JSON.stringify(user)
+      })
+      .then(res => {
+        if (!res.ok) {
+          showAlert(res.status);
+          return;
+        }
+        return res.json();
+      })
+      .then(() => {
+        userForm.reset();
+        userForm.id.value = '';
+        loadUsers();
+      });
+    };
+
+    function edit(user) {
+      userForm.id.value = user.id;
+      userForm.full_name.value = user.full_name;
+      userForm.dob.value = user.dob;
+      userForm.email.value = user.email;
+      userForm.phone.value = user.phone;
+    }
+
+    function del(id) {
+      fetch(`${api}/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+      .then(res => {
+        if (!res.ok) {
+          showAlert(res.status);
+          return;
+        }
+        loadUsers();
+      });
+    }
+
+    cancelBtn.onclick = () => {
+      userForm.reset();
+      userForm.id.value = '';
+    };
+
+    // 🔁 Tự động đăng nhập nếu đã có token
+    if (authToken) {
+      setLoggedInUI();
+      loadUsers();
+    }
+  </script>
+</body>
+</html>
