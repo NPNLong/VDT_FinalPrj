@@ -1,6 +1,6 @@
 backend:
   image:
-    repository: your-dockerhub-user/backend
+    repository: npnlong/backend
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -9,7 +9,7 @@ backend:
 
 frontend:
   image:
-    repository: your-dockerhub-user/frontend
+    repository: npnlong/frontend
     tag: latest
     pullPolicy: IfNotPresent
   service:
