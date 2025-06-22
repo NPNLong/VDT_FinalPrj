@@ -1,7 +1,7 @@
 backend:
   image:
     repository: npnlong/backend
-    tag: latest
+    tag: v2
     pullPolicy: IfNotPresent
   service:
     port: 5000
@@ -10,7 +10,7 @@ backend:
 frontend:
   image:
     repository: npnlong/frontend
-    tag: latest
+    tag: v2
     pullPolicy: IfNotPresent
   service:
     port: 80
