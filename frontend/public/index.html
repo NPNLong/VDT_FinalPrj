@@ -98,8 +98,9 @@
     const table = document.getElementById('user-table-body');
     const cancelBtn = document.getElementById('cancel-edit');
     const logoutBtn = document.getElementById('logout-btn');
-    const api = 'http://localhost:5001/api/users';
-    const loginAPI = 'http://localhost:5001/api/login';
+    const backendPort = 30090;
+    const api = `http://${window.location.hostname}:${backendPort}/api/users`;
+    const loginAPI = `http://${window.location.hostname}:${backendPort}/api/login`;
 
     let authToken = localStorage.getItem("token") || '';
 
