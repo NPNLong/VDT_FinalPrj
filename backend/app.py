@@ -7,6 +7,7 @@ from functools import wraps
 from datetime import datetime, timedelta
 import jwt
 import time
+import logging
 
 # === Prometheus ===
 from prometheus_client import generate_latest, Counter, Histogram, CONTENT_TYPE_LATEST
@@ -14,20 +15,28 @@ from prometheus_client import generate_latest, Counter, Histogram, CONTENT_TYPE_
 REQUEST_COUNT = Counter('app_requests_total', 'Total HTTP Requests', ['method', 'endpoint'])
 REQUEST_LATENCY = Histogram('app_request_latency_seconds', 'Request latency in seconds', ['endpoint'])
 
+# === Fluentd logging ===
+from fluent import sender
+
+fluent_sender = sender.FluentSender('flask.app', host='192.168.40.51', port=24224)  # đổi IP nếu Fluentd khác
+
+# === Flask App Setup ===
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SECRET_KEY'] = 'supersecretkey'
 CORS(app)
 db = SQLAlchemy(app)
 
-# === Rate limiter ===
+# === Rate Limiter ===
 limiter = Limiter(get_remote_address, app=app, default_limits=["10 per minute"], storage_uri="memory://")
 
 @app.errorhandler(429)
 def rate_limit_exceeded(e):
     return jsonify({"error": "Bạn đã vượt quá giới hạn 10 request/phút."}), 409
 
-# === Middleware ghi metrics ===
+# === Logging Setup ===
+logging.basicConfig(level=logging.INFO)
+
 @app.before_request
 def start_timer():
     g.start_time = time.time()
@@ -38,9 +47,19 @@ def record_metrics(response):
         resp_time = time.time() - g.start_time
         REQUEST_LATENCY.labels(request.path).observe(resp_time)
         REQUEST_COUNT.labels(request.method, request.path).inc()
+
+        # === Ghi log ra stdout
+        log_msg = f"{request.method} {request.path} {response.status_code}"
+        app.logger.info(log_msg)
+
+        # === Gửi log về Fluentd
+        fluent_sender.emit('access', {
+            'method': request.method,
+            'path': request.path,
+            'status': response.status_code
+        })
     return response
 
-# === Prometheus endpoint ===
 @app.route('/metrics')
 def metrics():
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
