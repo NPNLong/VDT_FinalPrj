@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import jwt
 import time
 import logging
+import requests
 
 # === Prometheus ===
 from prometheus_client import generate_latest, Counter, Histogram, CONTENT_TYPE_LATEST
@@ -15,26 +16,24 @@ from prometheus_client import generate_latest, Counter, Histogram, CONTENT_TYPE_
 REQUEST_COUNT = Counter('app_requests_total', 'Total HTTP Requests', ['method', 'endpoint'])
 REQUEST_LATENCY = Histogram('app_request_latency_seconds', 'Request latency in seconds', ['endpoint'])
 
-# === Fluentd logging ===
-from fluent import sender
+# === Fluentd Logging (qua HTTP) ===
+FLUENTD_ENDPOINT = "http://192.168.40.138:8080"  # Địa chỉ Fluentd container
 
-fluent_sender = sender.FluentSender('flask.app', host='192.168.40.51', port=24224)  # đổi IP nếu Fluentd khác
-
-# === Flask App Setup ===
+# === Flask Setup ===
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SECRET_KEY'] = 'supersecretkey'
 CORS(app)
 db = SQLAlchemy(app)
 
-# === Rate Limiter ===
+# === Rate Limiting ===
 limiter = Limiter(get_remote_address, app=app, default_limits=["10 per minute"], storage_uri="memory://")
 
 @app.errorhandler(429)
 def rate_limit_exceeded(e):
     return jsonify({"error": "Bạn đã vượt quá giới hạn 10 request/phút."}), 409
 
-# === Logging Setup ===
+# === Logging setup ===
 logging.basicConfig(level=logging.INFO)
 
 @app.before_request
@@ -52,19 +51,23 @@ def record_metrics(response):
         log_msg = f"{request.method} {request.path} {response.status_code}"
         app.logger.info(log_msg)
 
-        # === Gửi log về Fluentd
-        fluent_sender.emit('access', {
+        # === Gửi log về Fluentd qua HTTP
+        log_data = {
             'method': request.method,
             'path': request.path,
             'status': response.status_code
-        })
+        }
+        try:
+            requests.post(FLUENTD_ENDPOINT, json=log_data, timeout=1)
+        except Exception as e:
+            app.logger.warning(f"Không gửi được log tới Fluentd: {e}")
     return response
 
 @app.route('/metrics')
 def metrics():
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
-# === Mô hình User ===
+# === User Model ===
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(100))
@@ -72,7 +75,7 @@ class User(db.Model):
     email = db.Column(db.String(100))
     phone = db.Column(db.String(20))
 
-# === Tài khoản mẫu ===
+# === Dummy Accounts ===
 USER_CREDENTIALS = {
     "admin": {"password": "444", "role": "admin"},
     "user": {"password": "123", "role": "user"}
